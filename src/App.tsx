@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import WordList from './components/WordList';
 import SentenceList from './components/SentenceList';
 import Calendar from './components/Calendar';
+import WelcomeModal from './components/WelcomeModal';
 import { WordPair, SentencePair, Topic, StreakData } from './types';
 import { supabase, TABLES } from './lib/supabase';
 import { defaultWords, defaultSentences, wordTopics, sentenceTopics } from './data/defaultData';
@@ -18,6 +19,7 @@ function App() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const [streak, setStreak] = useState<StreakData>({
     current_streak: 0,
     longest_streak: 0,
@@ -572,10 +574,17 @@ function App() {
       <footer className="bg-white border-t border-gray-200 px-4 py-2 text-center">
         <p className="text-xs text-gray-500">
           Developed by{' '}
-            KC-Codes
-          </a>
+          <span className="text-indigo-600 font-medium">KC-Codes</span>
         </p>
       </footer>
+
+      {/* Welcome Modal */}
+      {showWelcomeModal && !loading && (
+        <WelcomeModal
+          streak={streak}
+          onClose={() => setShowWelcomeModal(false)}
+        />
+      )}
     </div>
   );
 }
