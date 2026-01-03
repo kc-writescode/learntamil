@@ -1,24 +1,175 @@
-import { useState, useEffect } from 'react';
-import { BookOpen, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { BookOpen, MessageSquare, Menu, CalendarDays } from 'lucide-react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import WordList from './components/WordList';
 import SentenceList from './components/SentenceList';
-import { WordPair, SentencePair, Topic } from './types';
+import Calendar from './components/Calendar';
+import { WordPair, SentencePair, Topic, StreakData } from './types';
 import { supabase, TABLES } from './lib/supabase';
 import { defaultWords, defaultSentences, wordTopics, sentenceTopics } from './data/defaultData';
 
+const STREAK_STORAGE_KEY = 'learntamil_streak';
+
 function App() {
-  const [activeTab, setActiveTab] = useState<'words' | 'sentences'>('words');
+  const [activeTab, setActiveTab] = useState<'words' | 'sentences' | 'calendar'>('words');
   const [words, setWords] = useState<WordPair[]>([]);
   const [sentences, setSentences] = useState<SentencePair[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [streak, setStreak] = useState<StreakData>({
+    current_streak: 0,
+    longest_streak: 0,
+    last_activity_date: '',
+    total_words_learned: 0,
+    total_sentences_learned: 0,
+  });
+
+  // Load streak from localStorage or Supabase
+  const loadStreak = useCallback(async () => {
+    try {
+      // Try Supabase first
+      const { data } = await supabase
+        .from(TABLES.STREAKS)
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (data) {
+        setStreak(data);
+        return;
+      }
+    } catch {
+      // Fall back to localStorage
+    }
+
+    // Load from localStorage
+    const stored = localStorage.getItem(STREAK_STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setStreak(parsed);
+      } catch {
+        // Invalid stored data, use defaults
+      }
+    }
+  }, []);
+
+  // Save streak to localStorage and optionally Supabase
+  const saveStreak = useCallback(async (newStreak: StreakData) => {
+    setStreak(newStreak);
+    localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(newStreak));
+
+    try {
+      if (newStreak.id) {
+        await supabase
+          .from(TABLES.STREAKS)
+          .update(newStreak)
+          .eq('id', newStreak.id);
+      } else {
+        const { data } = await supabase
+          .from(TABLES.STREAKS)
+          .insert([newStreak])
+          .select()
+          .single();
+        if (data) {
+          setStreak(data);
+          localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(data));
+        }
+      }
+    } catch {
+      // Supabase save failed, localStorage is our backup
+    }
+  }, []);
+
+  // Check and update streak based on date
+  const checkAndUpdateStreak = useCallback((currentStreak: StreakData): StreakData => {
+    const today = new Date().toISOString().split('T')[0];
+    const lastDate = currentStreak.last_activity_date;
+
+    if (!lastDate) {
+      return currentStreak;
+    }
+
+    const lastActivity = new Date(lastDate);
+    const todayDate = new Date(today);
+    const diffTime = todayDate.getTime() - lastActivity.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 1) {
+      // Streak broken - more than 1 day gap
+      return {
+        ...currentStreak,
+        current_streak: 0,
+      };
+    }
+
+    return currentStreak;
+  }, []);
+
+  // Record activity (called when word/sentence is updated)
+  const recordActivity = useCallback((type: 'word' | 'sentence') => {
+    const today = new Date().toISOString().split('T')[0];
+
+    setStreak(currentStreak => {
+      const checkedStreak = checkAndUpdateStreak(currentStreak);
+      const lastDate = checkedStreak.last_activity_date;
+
+      let newCurrentStreak = checkedStreak.current_streak;
+
+      if (lastDate !== today) {
+        // First activity of the day
+        if (lastDate) {
+          const lastActivity = new Date(lastDate);
+          const todayDate = new Date(today);
+          const diffTime = todayDate.getTime() - lastActivity.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays === 1) {
+            // Consecutive day
+            newCurrentStreak = checkedStreak.current_streak + 1;
+          } else if (diffDays > 1) {
+            // Streak broken
+            newCurrentStreak = 1;
+          }
+        } else {
+          // First ever activity
+          newCurrentStreak = 1;
+        }
+      }
+
+      const newStreak: StreakData = {
+        ...checkedStreak,
+        current_streak: newCurrentStreak,
+        longest_streak: Math.max(checkedStreak.longest_streak, newCurrentStreak),
+        last_activity_date: today,
+        total_words_learned: checkedStreak.total_words_learned + (type === 'word' ? 1 : 0),
+        total_sentences_learned: checkedStreak.total_sentences_learned + (type === 'sentence' ? 1 : 0),
+      };
+
+      // Save async
+      saveStreak(newStreak);
+
+      return newStreak;
+    });
+  }, [checkAndUpdateStreak, saveStreak]);
 
   // Initialize data from Supabase or use defaults
   useEffect(() => {
     initializeData();
-  }, []);
+    loadStreak();
+  }, [loadStreak]);
+
+  // Check streak on load (might have expired)
+  useEffect(() => {
+    if (streak.last_activity_date) {
+      const checked = checkAndUpdateStreak(streak);
+      if (checked.current_streak !== streak.current_streak) {
+        saveStreak(checked);
+      }
+    }
+  }, [streak.last_activity_date, checkAndUpdateStreak, saveStreak, streak]);
 
   const initializeData = async () => {
     try {
@@ -105,6 +256,10 @@ function App() {
 
     setWords([...words, newWord]);
 
+    if (tamil.trim()) {
+      recordActivity('word');
+    }
+
     // Sync to Supabase
     try {
       await supabase.from(TABLES.WORDS).insert([newWord]);
@@ -114,11 +269,20 @@ function App() {
   };
 
   const handleUpdateWord = async (id: string, tamil: string) => {
-    setWords(words.map((word) => (word.id === id ? { ...word, tamil } : word)));
+    const word = words.find(w => w.id === id);
+    const hadTranslation = word?.tamil?.trim();
+    const now = new Date().toISOString();
+
+    setWords(words.map((w) => (w.id === id ? { ...w, tamil, updated_at: now } : w)));
+
+    // Record activity if adding a new translation (not just editing)
+    if (tamil.trim() && !hadTranslation) {
+      recordActivity('word');
+    }
 
     // Sync to Supabase
     try {
-      await supabase.from(TABLES.WORDS).update({ tamil }).eq('id', id);
+      await supabase.from(TABLES.WORDS).update({ tamil, updated_at: now }).eq('id', id);
     } catch (error) {
       console.error('Error updating word in Supabase:', error);
     }
@@ -148,6 +312,10 @@ function App() {
 
     setSentences([...sentences, newSentence]);
 
+    if (tamil.trim()) {
+      recordActivity('sentence');
+    }
+
     // Sync to Supabase
     try {
       await supabase.from(TABLES.SENTENCES).insert([newSentence]);
@@ -157,13 +325,22 @@ function App() {
   };
 
   const handleUpdateSentence = async (id: string, tamil: string) => {
+    const sentence = sentences.find(s => s.id === id);
+    const hadTranslation = sentence?.tamil?.trim();
+    const now = new Date().toISOString();
+
     setSentences(
-      sentences.map((sentence) => (sentence.id === id ? { ...sentence, tamil } : sentence))
+      sentences.map((s) => (s.id === id ? { ...s, tamil, updated_at: now } : s))
     );
+
+    // Record activity if adding a new translation (not just editing)
+    if (tamil.trim() && !hadTranslation) {
+      recordActivity('sentence');
+    }
 
     // Sync to Supabase
     try {
-      await supabase.from(TABLES.SENTENCES).update({ tamil }).eq('id', id);
+      await supabase.from(TABLES.SENTENCES).update({ tamil, updated_at: now }).eq('id', id);
     } catch (error) {
       console.error('Error updating sentence in Supabase:', error);
     }
@@ -210,7 +387,7 @@ function App() {
     ? sentences.filter((sentence) => sentence.topic === selectedTopic)
     : [];
 
-  const topics = getTopics(activeTab);
+  const topics = activeTab === 'calendar' ? [] : getTopics(activeTab);
 
   // Auto-select first topic if none selected
   useEffect(() => {
@@ -232,75 +409,111 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header />
+      <Header streak={streak} />
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6">
-        <div className="flex gap-2">
+      <div className="bg-white border-b border-gray-200 px-4 md:px-6">
+        <div className="flex items-center gap-2">
+          {/* Mobile menu button */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg md:hidden"
+            title="Open topics"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
           <button
             onClick={() => {
               setActiveTab('words');
               setSelectedTopic(null);
             }}
-            className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-3 md:px-4 py-3 border-b-2 transition-colors ${
               activeTab === 'words'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
             <BookOpen className="w-4 h-4" />
-            Words
+            <span>Words</span>
           </button>
           <button
             onClick={() => {
               setActiveTab('sentences');
               setSelectedTopic(null);
             }}
-            className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-3 md:px-4 py-3 border-b-2 transition-colors ${
               activeTab === 'sentences'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
             <MessageSquare className="w-4 h-4" />
-            Sentences
+            <span>Sentences</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('calendar');
+            }}
+            className={`flex items-center gap-2 px-3 md:px-4 py-3 border-b-2 transition-colors ${
+              activeTab === 'calendar'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>Calendar</span>
           </button>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-          topics={topics}
-          selectedTopic={selectedTopic}
-          onSelectTopic={setSelectedTopic}
-          onAddTopic={handleAddTopic}
-          onDeleteTopic={handleDeleteTopic}
-          activeTab={activeTab}
-        />
-
-        {selectedTopic ? (
-          activeTab === 'words' ? (
-            <WordList
-              words={currentWords}
-              topicName={selectedTopic}
-              onAddWord={handleAddWord}
-              onUpdateWord={handleUpdateWord}
-              onDeleteWord={handleDeleteWord}
-            />
-          ) : (
-            <SentenceList
-              sentences={currentSentences}
-              topicName={selectedTopic}
-              onAddSentence={handleAddSentence}
-              onUpdateSentence={handleUpdateSentence}
-              onDeleteSentence={handleDeleteSentence}
-            />
-          )
+        {activeTab === 'calendar' ? (
+          <Calendar
+            words={words}
+            sentences={sentences}
+            onRefresh={initializeData}
+          />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            Select a topic to get started
-          </div>
+          <>
+            <Sidebar
+              topics={topics}
+              selectedTopic={selectedTopic}
+              onSelectTopic={setSelectedTopic}
+              onAddTopic={handleAddTopic}
+              onDeleteTopic={handleDeleteTopic}
+              activeTab={activeTab}
+              isOpen={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+              streak={streak}
+            />
+
+            {selectedTopic ? (
+              activeTab === 'words' ? (
+                <WordList
+                  words={currentWords}
+                  topicName={selectedTopic}
+                  onAddWord={handleAddWord}
+                  onUpdateWord={handleUpdateWord}
+                  onDeleteWord={handleDeleteWord}
+                />
+              ) : (
+                <SentenceList
+                  sentences={currentSentences}
+                  topicName={selectedTopic}
+                  onAddSentence={handleAddSentence}
+                  onUpdateSentence={handleUpdateSentence}
+                  onDeleteSentence={handleDeleteSentence}
+                />
+              )
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-500 p-4 text-center">
+                <span className="md:hidden">Tap the menu to select a topic</span>
+                <span className="hidden md:inline">Select a topic to get started</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

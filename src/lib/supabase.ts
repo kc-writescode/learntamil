@@ -10,4 +10,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const TABLES = {
   WORDS: 'words',
   SENTENCES: 'sentences',
+  STREAKS: 'streaks',
 };

@@ -64,6 +64,30 @@ CREATE TRIGGER update_words_updated_at BEFORE UPDATE ON words
 
 CREATE TRIGGER update_sentences_updated_at BEFORE UPDATE ON sentences
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create streaks table for tracking daily learning progress
+CREATE TABLE streaks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  current_streak INTEGER NOT NULL DEFAULT 0,
+  longest_streak INTEGER NOT NULL DEFAULT 0,
+  last_activity_date DATE,
+  total_words_learned INTEGER NOT NULL DEFAULT 0,
+  total_sentences_learned INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Enable Row Level Security for streaks
+ALTER TABLE streaks ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for streaks table
+CREATE POLICY "Enable read access for all users" ON streaks FOR SELECT USING (true);
+CREATE POLICY "Enable insert access for all users" ON streaks FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update access for all users" ON streaks FOR UPDATE USING (true);
+
+-- Create trigger for streaks updated_at
+CREATE TRIGGER update_streaks_updated_at BEFORE UPDATE ON streaks
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 ```
 
 ## 3. Get Your Credentials
