@@ -74,8 +74,8 @@ CREATE TRIGGER update_sentences_updated_at BEFORE UPDATE ON sentences
 4. Add your credentials:
 
 ```
-VITE_SUPABASE_URL=https://yufqjpccuyfxpfluxmtq.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_mT4ZoPlwSig-3riHWdIpWw_Oli2OBVK
+VITE_SUPABASE_URL=your_project_url
+VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 
 ## 4. Run the Application
