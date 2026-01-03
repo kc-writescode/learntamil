@@ -20,6 +20,8 @@ export interface Topic {
   id: string;
   name: string;
   count: number;
+  pendingCount: number;
+  isComplete: boolean;
   type: 'words' | 'sentences';
 }
 

@@ -1,6 +1,5 @@
-import { Plus, Trash2, BookOpen, MessageSquare, X } from 'lucide-react';
-import { Topic, StreakData } from '../types';
-import StreakBadge from './StreakBadge';
+import { Plus, Trash2, BookOpen, MessageSquare, X, Check } from 'lucide-react';
+import { Topic } from '../types';
 
 interface SidebarProps {
   topics: Topic[];
@@ -11,7 +10,6 @@ interface SidebarProps {
   activeTab: 'words' | 'sentences' | 'calendar';
   isOpen: boolean;
   onClose: () => void;
-  streak: StreakData;
 }
 
 export default function Sidebar({
@@ -23,7 +21,6 @@ export default function Sidebar({
   activeTab,
   isOpen,
   onClose,
-  streak,
 }: SidebarProps) {
   const handleTopicSelect = (topicName: string) => {
     onSelectTopic(topicName);
@@ -83,42 +80,52 @@ export default function Sidebar({
                 className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedTopic === topic.name
                     ? 'bg-indigo-50 border-2 border-indigo-600'
+                    : topic.isComplete
+                    ? 'bg-green-50 border-2 border-transparent hover:bg-green-100'
                     : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
                 }`}
                 onClick={() => handleTopicSelect(topic.name)}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {activeTab === 'words' ? (
-                    <BookOpen className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <BookOpen className={`w-4 h-4 flex-shrink-0 ${topic.isComplete ? 'text-green-600' : 'text-gray-500'}`} />
                   ) : (
-                    <MessageSquare className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <MessageSquare className={`w-4 h-4 flex-shrink-0 ${topic.isComplete ? 'text-green-600' : 'text-gray-500'}`} />
                   )}
-                  <span className="font-medium text-gray-900 truncate">{topic.name}</span>
+                  <span className={`font-medium truncate ${topic.isComplete ? 'text-green-700' : 'text-gray-900'}`}>{topic.name}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-sm text-gray-500">{topic.count}</span>
-                  {topic.count === 0 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteTopic(topic.name);
-                      }}
-                      className="text-gray-400 hover:text-red-600 transition-colors"
-                      title="Delete Topic"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  {topic.isComplete ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white rounded-full">
+                      <Check className="w-3 h-3" strokeWidth={3} />
+                      <span className="text-xs font-medium">{topic.count}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      {topic.pendingCount > 0 && (
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
+                          {topic.pendingCount} pending
+                        </span>
+                      )}
+                      <span className="text-sm text-gray-500">{topic.count}</span>
+                    </div>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteTopic(topic.name);
+                    }}
+                    className="text-gray-400 hover:text-red-600 transition-colors"
+                    title="Delete Topic"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Streak section at bottom */}
-        <div className="p-4 border-t border-gray-200 flex-shrink-0">
-          <StreakBadge streak={streak} />
-        </div>
       </div>
     </>
   );

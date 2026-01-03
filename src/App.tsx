@@ -108,8 +108,8 @@ function App() {
     return currentStreak;
   }, []);
 
-  // Record activity (called when word/sentence is updated)
-  const recordActivity = useCallback((type: 'word' | 'sentence') => {
+  // Update learned count (increment or decrement)
+  const updateLearnedCount = useCallback((type: 'word' | 'sentence', delta: number) => {
     const today = new Date().toISOString().split('T')[0];
 
     setStreak(currentStreak => {
@@ -118,7 +118,8 @@ function App() {
 
       let newCurrentStreak = checkedStreak.current_streak;
 
-      if (lastDate !== today) {
+      // Only update streak days when adding (not removing)
+      if (delta > 0 && lastDate !== today) {
         // First activity of the day
         if (lastDate) {
           const lastActivity = new Date(lastDate);
@@ -139,13 +140,16 @@ function App() {
         }
       }
 
+      const newWordsCount = Math.max(0, checkedStreak.total_words_learned + (type === 'word' ? delta : 0));
+      const newSentencesCount = Math.max(0, checkedStreak.total_sentences_learned + (type === 'sentence' ? delta : 0));
+
       const newStreak: StreakData = {
         ...checkedStreak,
         current_streak: newCurrentStreak,
         longest_streak: Math.max(checkedStreak.longest_streak, newCurrentStreak),
-        last_activity_date: today,
-        total_words_learned: checkedStreak.total_words_learned + (type === 'word' ? 1 : 0),
-        total_sentences_learned: checkedStreak.total_sentences_learned + (type === 'sentence' ? 1 : 0),
+        last_activity_date: delta > 0 ? today : checkedStreak.last_activity_date,
+        total_words_learned: newWordsCount,
+        total_sentences_learned: newSentencesCount,
       };
 
       // Save async
@@ -230,34 +234,52 @@ function App() {
     }
   };
 
-  // Get topics with counts
+  // Get topics with counts and pending translations
   const getTopics = (type: 'words' | 'sentences'): Topic[] => {
     const items = type === 'words' ? words : sentences;
     const topicsList = type === 'words' ? wordTopics : sentenceTopics;
 
-    return topicsList.map((topicName) => ({
-      id: topicName,
-      name: topicName,
-      count: items.filter((item) => item.topic === topicName).length,
-      type,
-    }));
+    const topicsWithCounts = topicsList.map((topicName) => {
+      const topicItems = items.filter((item) => item.topic === topicName);
+      const pendingCount = topicItems.filter((item) => !item.tamil?.trim()).length;
+      const isComplete = topicItems.length > 0 && pendingCount === 0;
+
+      return {
+        id: topicName,
+        name: topicName,
+        count: topicItems.length,
+        pendingCount,
+        isComplete,
+        type,
+      };
+    });
+
+    // Sort: incomplete topics first, then completed topics
+    return topicsWithCounts.sort((a, b) => {
+      if (a.isComplete === b.isComplete) return 0;
+      return a.isComplete ? 1 : -1;
+    });
   };
 
   // Word operations
   const handleAddWord = async (english: string, tamil: string) => {
     if (!selectedTopic) return;
 
+    const now = new Date().toISOString();
     const newWord: WordPair = {
       id: crypto.randomUUID(),
       english,
       tamil,
       topic: selectedTopic,
+      created_at: now,
+      updated_at: tamil.trim() ? now : undefined,
     };
 
     setWords([...words, newWord]);
 
+    // Only count if Tamil translation is provided
     if (tamil.trim()) {
-      recordActivity('word');
+      updateLearnedCount('word', 1);
     }
 
     // Sync to Supabase
@@ -270,14 +292,19 @@ function App() {
 
   const handleUpdateWord = async (id: string, tamil: string) => {
     const word = words.find(w => w.id === id);
-    const hadTranslation = word?.tamil?.trim();
+    const hadTranslation = !!word?.tamil?.trim();
+    const hasTranslation = !!tamil.trim();
     const now = new Date().toISOString();
 
     setWords(words.map((w) => (w.id === id ? { ...w, tamil, updated_at: now } : w)));
 
-    // Record activity if adding a new translation (not just editing)
-    if (tamil.trim() && !hadTranslation) {
-      recordActivity('word');
+    // Update count based on translation change
+    if (hasTranslation && !hadTranslation) {
+      // Added a translation
+      updateLearnedCount('word', 1);
+    } else if (!hasTranslation && hadTranslation) {
+      // Removed a translation
+      updateLearnedCount('word', -1);
     }
 
     // Sync to Supabase
@@ -289,7 +316,15 @@ function App() {
   };
 
   const handleDeleteWord = async (id: string) => {
-    setWords(words.filter((word) => word.id !== id));
+    const word = words.find(w => w.id === id);
+    const hadTranslation = !!word?.tamil?.trim();
+
+    setWords(words.filter((w) => w.id !== id));
+
+    // Decrease count if the deleted word had a translation
+    if (hadTranslation) {
+      updateLearnedCount('word', -1);
+    }
 
     // Sync to Supabase
     try {
@@ -303,17 +338,21 @@ function App() {
   const handleAddSentence = async (english: string, tamil: string) => {
     if (!selectedTopic) return;
 
+    const now = new Date().toISOString();
     const newSentence: SentencePair = {
       id: crypto.randomUUID(),
       english,
       tamil,
       topic: selectedTopic,
+      created_at: now,
+      updated_at: tamil.trim() ? now : undefined,
     };
 
     setSentences([...sentences, newSentence]);
 
+    // Only count if Tamil translation is provided
     if (tamil.trim()) {
-      recordActivity('sentence');
+      updateLearnedCount('sentence', 1);
     }
 
     // Sync to Supabase
@@ -326,16 +365,21 @@ function App() {
 
   const handleUpdateSentence = async (id: string, tamil: string) => {
     const sentence = sentences.find(s => s.id === id);
-    const hadTranslation = sentence?.tamil?.trim();
+    const hadTranslation = !!sentence?.tamil?.trim();
+    const hasTranslation = !!tamil.trim();
     const now = new Date().toISOString();
 
     setSentences(
       sentences.map((s) => (s.id === id ? { ...s, tamil, updated_at: now } : s))
     );
 
-    // Record activity if adding a new translation (not just editing)
-    if (tamil.trim() && !hadTranslation) {
-      recordActivity('sentence');
+    // Update count based on translation change
+    if (hasTranslation && !hadTranslation) {
+      // Added a translation
+      updateLearnedCount('sentence', 1);
+    } else if (!hasTranslation && hadTranslation) {
+      // Removed a translation
+      updateLearnedCount('sentence', -1);
     }
 
     // Sync to Supabase
@@ -347,7 +391,15 @@ function App() {
   };
 
   const handleDeleteSentence = async (id: string) => {
-    setSentences(sentences.filter((sentence) => sentence.id !== id));
+    const sentence = sentences.find(s => s.id === id);
+    const hadTranslation = !!sentence?.tamil?.trim();
+
+    setSentences(sentences.filter((s) => s.id !== id));
+
+    // Decrease count if the deleted sentence had a translation
+    if (hadTranslation) {
+      updateLearnedCount('sentence', -1);
+    }
 
     // Sync to Supabase
     try {
@@ -486,7 +538,6 @@ function App() {
               activeTab={activeTab}
               isOpen={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
-              streak={streak}
             />
 
             {selectedTopic ? (

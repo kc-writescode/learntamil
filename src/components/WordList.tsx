@@ -22,6 +22,7 @@ export default function WordList({
   const [newTamil, setNewTamil] = useState('');
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const isSavingRef = useRef<Set<string>>(new Set());
 
   const handleAdd = () => {
     if (newEnglish.trim()) {
@@ -48,10 +49,22 @@ export default function WordList({
   };
 
   const handleSave = (word: WordPair) => {
+    // Prevent double-saving (from both Enter key and blur)
+    if (isSavingRef.current.has(word.id)) {
+      return;
+    }
+
     const newValue = localValues[word.id];
     if (newValue !== undefined && newValue !== word.tamil) {
+      isSavingRef.current.add(word.id);
       onUpdateWord(word.id, newValue);
+
+      // Clear saving flag after a short delay
+      setTimeout(() => {
+        isSavingRef.current.delete(word.id);
+      }, 100);
     }
+
     // Clear local state after save
     setLocalValues(prev => {
       const next = { ...prev };
