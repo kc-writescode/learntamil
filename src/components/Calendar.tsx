@@ -13,7 +13,16 @@ export default function Calendar({ words, sentences, onRefresh }: CalendarProps)
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const today = new Date().toISOString().split('T')[0];
+  // Convert a Date object to local date string (YYYY-MM-DD)
+  const getLocalDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Get today's date in local timezone
+  const today = getLocalDateString(new Date());
 
   // Get activity data for each day
   const activityByDate = useMemo(() => {
@@ -21,7 +30,7 @@ export default function Calendar({ words, sentences, onRefresh }: CalendarProps)
 
     words.forEach(word => {
       if (word.updated_at && word.tamil?.trim()) {
-        const date = word.updated_at.split('T')[0];
+        const date = getLocalDateString(new Date(word.updated_at));
         if (!activity[date]) {
           activity[date] = { words: [], sentences: [] };
         }
@@ -31,7 +40,7 @@ export default function Calendar({ words, sentences, onRefresh }: CalendarProps)
 
     sentences.forEach(sentence => {
       if (sentence.updated_at && sentence.tamil?.trim()) {
-        const date = sentence.updated_at.split('T')[0];
+        const date = getLocalDateString(new Date(sentence.updated_at));
         if (!activity[date]) {
           activity[date] = { words: [], sentences: [] };
         }
