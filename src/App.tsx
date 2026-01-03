@@ -6,7 +6,7 @@ import WordList from './components/WordList';
 import SentenceList from './components/SentenceList';
 import Calendar from './components/Calendar';
 import WelcomeModal from './components/WelcomeModal';
-import { WordPair, SentencePair, Topic, StreakData } from './types';
+import { WordPair, SentencePair, Topic, StreakData, canDeleteTranslatedItem } from './types';
 import { supabase, TABLES } from './lib/supabase';
 import { defaultWords, defaultSentences, wordTopics, sentenceTopics } from './data/defaultData';
 
@@ -319,7 +319,15 @@ function App() {
 
   const handleDeleteWord = async (id: string) => {
     const word = words.find(w => w.id === id);
-    const hadTranslation = !!word?.tamil?.trim();
+    if (!word) return;
+
+    const hadTranslation = !!word.tamil?.trim();
+
+    // Security check: Prevent deletion of translated items after 3-minute window
+    if (hadTranslation && !canDeleteTranslatedItem(word.updated_at)) {
+      console.warn('Delete blocked: Translation is older than 3 minutes');
+      return;
+    }
 
     setWords(words.filter((w) => w.id !== id));
 
@@ -394,7 +402,15 @@ function App() {
 
   const handleDeleteSentence = async (id: string) => {
     const sentence = sentences.find(s => s.id === id);
-    const hadTranslation = !!sentence?.tamil?.trim();
+    if (!sentence) return;
+
+    const hadTranslation = !!sentence.tamil?.trim();
+
+    // Security check: Prevent deletion of translated items after 3-minute window
+    if (hadTranslation && !canDeleteTranslatedItem(sentence.updated_at)) {
+      console.warn('Delete blocked: Translation is older than 3 minutes');
+      return;
+    }
 
     setSentences(sentences.filter((s) => s.id !== id));
 
@@ -423,6 +439,20 @@ function App() {
   };
 
   const handleDeleteTopic = (topicName: string) => {
+    // Security check: Prevent deletion if topic contains translated items older than 3 minutes
+    const itemsInTopic = activeTab === 'words'
+      ? words.filter((w) => w.topic === topicName)
+      : sentences.filter((s) => s.topic === topicName);
+
+    const hasLockedItem = itemsInTopic.some(
+      (item) => item.tamil?.trim() && !canDeleteTranslatedItem(item.updated_at)
+    );
+
+    if (hasLockedItem) {
+      console.warn('Delete blocked: Topic contains translations older than 3 minutes');
+      return;
+    }
+
     if (confirm(`Are you sure you want to delete the "${topicName}" topic?`)) {
       if (activeTab === 'words') {
         setWords(words.filter((word) => word.topic !== topicName));
@@ -540,6 +570,8 @@ function App() {
               activeTab={activeTab}
               isOpen={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
+              words={words}
+              sentences={sentences}
             />
 
             {selectedTopic ? (

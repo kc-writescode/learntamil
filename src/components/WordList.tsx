@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react';
-import { Trash2, Plus } from 'lucide-react';
-import { WordPair } from '../types';
+import { useState, useRef, useEffect } from 'react';
+import { Trash2, Plus, Lock } from 'lucide-react';
+import { WordPair, canDeleteTranslatedItem, getDeleteTimeRemaining } from '../types';
 
 interface WordListProps {
   words: WordPair[];
@@ -23,6 +23,27 @@ export default function WordList({
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const isSavingRef = useRef<Set<string>>(new Set());
+  const [, forceUpdate] = useState(0);
+
+  // Re-render periodically to update delete button state for items within the 3-minute window
+  useEffect(() => {
+    const hasRecentTranslations = words.some(
+      (word) => word.tamil?.trim() && getDeleteTimeRemaining(word.updated_at) > 0
+    );
+
+    if (hasRecentTranslations) {
+      const interval = setInterval(() => forceUpdate((n) => n + 1), 1000);
+      return () => clearInterval(interval);
+    }
+  }, [words]);
+
+  // Check if a word can be deleted
+  const canDelete = (word: WordPair): boolean => {
+    // Words without Tamil translations can always be deleted
+    if (!word.tamil?.trim()) return true;
+    // Words with translations can only be deleted within 3-minute window
+    return canDeleteTranslatedItem(word.updated_at);
+  };
 
   const handleAdd = () => {
     if (newEnglish.trim()) {
@@ -185,14 +206,23 @@ export default function WordList({
                     </div>
                   </div>
 
-                  {/* Delete button */}
-                  <button
-                    onClick={() => onDeleteWord(word.id)}
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0 mt-1"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  {/* Delete button - only shown within 3-minute window for translated items */}
+                  {canDelete(word) ? (
+                    <button
+                      onClick={() => onDeleteWord(word.id)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0 mt-1"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <div
+                      className="p-2 text-gray-300 flex-shrink-0 mt-1 cursor-not-allowed"
+                      title="Deletion locked after 3 minutes"
+                    >
+                      <Lock className="w-5 h-5" />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

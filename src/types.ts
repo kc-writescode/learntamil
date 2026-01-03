@@ -35,3 +35,29 @@ export interface StreakData {
   created_at?: string;
   updated_at?: string;
 }
+
+// Time window in milliseconds for allowing deletion of translated items (3 minutes)
+export const DELETE_WINDOW_MS = 3 * 60 * 1000;
+
+// Check if an item with a Tamil translation can be deleted (within 3-minute window)
+export function canDeleteTranslatedItem(updatedAt: string | undefined): boolean {
+  if (!updatedAt) return true; // No timestamp means it can be deleted
+
+  const translationTime = new Date(updatedAt).getTime();
+  const now = Date.now();
+  const elapsed = now - translationTime;
+
+  return elapsed <= DELETE_WINDOW_MS;
+}
+
+// Get remaining time in seconds before delete is locked
+export function getDeleteTimeRemaining(updatedAt: string | undefined): number {
+  if (!updatedAt) return 0;
+
+  const translationTime = new Date(updatedAt).getTime();
+  const now = Date.now();
+  const elapsed = now - translationTime;
+  const remaining = DELETE_WINDOW_MS - elapsed;
+
+  return Math.max(0, Math.ceil(remaining / 1000));
+}

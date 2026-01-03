@@ -1,5 +1,6 @@
-import { Plus, Trash2, BookOpen, MessageSquare, X, Check } from 'lucide-react';
-import { Topic } from '../types';
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, BookOpen, MessageSquare, X, Check, Lock } from 'lucide-react';
+import { Topic, WordPair, SentencePair, canDeleteTranslatedItem, getDeleteTimeRemaining } from '../types';
 
 interface SidebarProps {
   topics: Topic[];
@@ -10,6 +11,8 @@ interface SidebarProps {
   activeTab: 'words' | 'sentences' | 'calendar';
   isOpen: boolean;
   onClose: () => void;
+  words: WordPair[];
+  sentences: SentencePair[];
 }
 
 export default function Sidebar({
@@ -21,7 +24,38 @@ export default function Sidebar({
   activeTab,
   isOpen,
   onClose,
+  words,
+  sentences,
 }: SidebarProps) {
+  const [, forceUpdate] = useState(0);
+
+  // Re-render periodically to update delete button state for topics with recent translations
+  useEffect(() => {
+    const items = activeTab === 'words' ? words : sentences;
+    const hasRecentTranslations = items.some(
+      (item) => item.tamil?.trim() && getDeleteTimeRemaining(item.updated_at) > 0
+    );
+
+    if (hasRecentTranslations) {
+      const interval = setInterval(() => forceUpdate((n) => n + 1), 1000);
+      return () => clearInterval(interval);
+    }
+  }, [words, sentences, activeTab]);
+
+  // Check if a topic can be deleted (all translated items must be within 3-minute window)
+  const canDeleteTopic = (topicName: string): boolean => {
+    const items = activeTab === 'words'
+      ? words.filter((w) => w.topic === topicName)
+      : sentences.filter((s) => s.topic === topicName);
+
+    // Check if any item has a translation older than 3 minutes
+    const hasLockedItem = items.some(
+      (item) => item.tamil?.trim() && !canDeleteTranslatedItem(item.updated_at)
+    );
+
+    return !hasLockedItem;
+  };
+
   const handleTopicSelect = (topicName: string) => {
     onSelectTopic(topicName);
     onClose();
@@ -110,16 +144,25 @@ export default function Sidebar({
                       <span className="text-sm text-gray-500">{topic.count}</span>
                     </div>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteTopic(topic.name);
-                    }}
-                    className="text-gray-400 hover:text-red-600 transition-colors"
-                    title="Delete Topic"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {canDeleteTopic(topic.name) ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteTopic(topic.name);
+                      }}
+                      className="text-gray-400 hover:text-red-600 transition-colors"
+                      title="Delete Topic"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <div
+                      className="text-gray-300 cursor-not-allowed"
+                      title="Topic contains translations older than 3 minutes"
+                    >
+                      <Lock className="w-4 h-4" />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
