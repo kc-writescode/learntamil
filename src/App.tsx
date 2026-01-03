@@ -567,6 +567,21 @@ function App() {
           </>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 px-4 py-2 text-center">
+        <p className="text-xs text-gray-500">
+          Developed by{' '}
+          <a
+            href="https://github.com/kc-writescode"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-indigo-600 hover:text-indigo-700 font-medium"
+          >
+            KC-Codes
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }
